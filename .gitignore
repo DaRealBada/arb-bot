@@ -1,0 +1,15 @@
+# Virtual environment
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Sensitive files
+.env
+
+# Logs and temporary files
+*.log
+*.tmp
