@@ -1,0 +1,68 @@
+{
+    "events": [
+        {
+            "event_ticker": "KXELONTWEETS-25APR04",
+            "series_ticker": "KXELONTWEETS",
+            "sub_title": "Ending Apr 4, 2025",
+            "title": "How many Elon Musk posts on X the week ending on Apr 4, 2025?",
+            "collateral_return_type": "MECNET",
+            "mutually_exclusive": true,
+            "category": "Politics"
+        },
+        {
+            "event_ticker": "KXELONTWEETS-25MAR28",
+            "series_ticker": "KXELONTWEETS",
+            "sub_title": "Ending Mar 28, 2025",
+            "title": "How many Elon Musk posts on X the week ending on Friday?",
+            "collateral_return_type": "MECNET",
+            "mutually_exclusive": true,
+            "category": "Politics"
+        },
+        {
+            "event_ticker": "KXELONTWEETS-25MAR21",
+            "series_ticker": "KXELONTWEETS",
+            "sub_title": "Ending Mar 21, 2025",
+            "title": "How many times will Elon Musk post on X this week?",
+            "collateral_return_type": "MECNET",
+            "mutually_exclusive": true,
+            "category": "Politics"
+        },
+        {
+            "event_ticker": "KXELONTWEETS-25MAR14",
+            "series_ticker": "KXELONTWEETS",
+            "sub_title": "Ending Mar 14, 2025",
+            "title": "How many times will Elon Musk post on X this week?",
+            "collateral_return_type": "MECNET",
+            "mutually_exclusive": true,
+            "category": "Politics"
+        },
+        {
+            "event_ticker": "KXELONTWEETS-25MAR07",
+            "series_ticker": "KXELONTWEETS",
+            "sub_title": "Ending Mar 7, 2025",
+            "title": "How many times will Elon Musk post on X this week?",
+            "collateral_return_type": "MECNET",
+            "mutually_exclusive": true,
+            "category": "Politics"
+        },
+        {
+            "event_ticker": "KXELONTWEETS-25FEB28",
+            "series_ticker": "KXELONTWEETS",
+            "sub_title": "Ending Feb 28, 2025",
+            "title": "How many times will Elon post on X this week?",
+            "collateral_return_type": "MECNET",
+            "mutually_exclusive": true,
+            "category": "Politics"
+        },
+        {
+            "event_ticker": "KXELONTWEETS-25FEB21",
+            "series_ticker": "KXELONTWEETS",
+            "sub_title": "Ending Feb 21, 2025",
+            "title": "How many times will Elon post on X this week?",
+            "collateral_return_type": "MECNET",
+            "mutually_exclusive": true,
+            "category": "Politics"
+        }
+    ],
+    "cursor": ""
+}
