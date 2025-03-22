@@ -1,4 +1,4 @@
-import websocket
+import websocket # type: ignore
 import json
 import threading
 import time
