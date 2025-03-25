@@ -17,7 +17,7 @@ response = requests.get(url, headers=headers, params=params)
 markets_data = response.json()
 
 # Save to JSON file
-with open('markets_data.json', 'w') as file:
+with open('markets-data.json', 'w') as file:
     json.dump(markets_data, file, indent=4)
 
-print("Data saved to markets_data.json")
+print("Data saved to markets-data.json")

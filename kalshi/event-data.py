@@ -20,4 +20,4 @@ markets = response.json()
 with open('event-data.json', 'w') as file:
     json.dump(markets, file, indent=4)
 
-print("Data saved to markets_data.json")
+print("Data saved to event-data.json")
