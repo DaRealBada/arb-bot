@@ -2,7 +2,6 @@ import requests
 import json
 import time
 
-#hello world this is me on wsl2
 # Market details
 event_ticker = "KXELONTWEETS-25MAR28"
 
