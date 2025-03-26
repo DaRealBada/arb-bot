@@ -1,114 +1,183 @@
 import asyncio
 import websockets
 import json
-import requests
+import logging
 import os
+import base64
+import hmac
+import hashlib
+import time
+from dotenv import load_dotenv
+import requests
 
-from dotenv import load_dotenv #add this import.
+# Load environment variables from .env file
+load_dotenv()
 
-load_dotenv() # Load environment variables from .env
+class KalshiWebSocketClient:
+    def __init__(self, api_key, private_key, event_ticker="KXELONTWEETS-25MAR28"):
+        self.websocket_url = "wss://api.elections.kalshi.com/trade-api/ws/v2"
+        self.rest_base_url = "https://api.elections.kalshi.com/trade-api/v2"
+        self.api_key = api_key
+        self.private_key = private_key
+        self.event_ticker = event_ticker
+        self.market_ticker = None
+        
+        logging.basicConfig(level=logging.DEBUG, 
+                          format='%(asctime)s - %(levelname)s - %(message)s')
+        self.logger = logging.getLogger(__name__)
 
-KALSHI_WS_URL = "wss://api.elections.kalshi.com/trade-api/ws/v2"
-KALSHI_API_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
+    def generate_signature(self, timestamp):
+        """Generate signature as per REST API pattern (assumed same for WS)."""
+        message = f"{timestamp}{self.api_key}"
+        signature = hmac.new(
+            self.private_key.encode('utf-8'), 
+            message.encode('utf-8'), 
+            hashlib.sha256
+        ).digest()
+        return base64.b64encode(signature).decode('utf-8')
 
-async def connect_and_subscribe(api_key, event_ticker):
-    """Connects to the Kalshi websocket and subscribes to orderbook data."""
-    try:
-        async with websockets.connect(KALSHI_WS_URL, extra_headers={"Authorization": f"Bearer {api_key}"}) as websocket:
-            print("Connected to Kalshi websocket.")
+    def fetch_markets_by_event(self):
+        """Fetch markets for the event ticker via REST API."""
+        try:
+            timestamp = int(time.time())
+            signature = self.generate_signature(timestamp)
 
-            # Get market tickers for the event
-            market_tickers = await get_market_tickers(event_ticker)
-            if not market_tickers:
-                print(f"No markets found for event ticker: {event_ticker}")
-                return
-
-            # Subscribe to orderbook_delta for each market
-            subscribe_command = {
-                "id": 1,
-                "cmd": "subscribe",
-                "params": {
-                    "channels": ["orderbook_delta"],
-                    "market_tickers": market_tickers,
-                },
+            headers = {
+                'X-API-Key': self.api_key,
+                'X-Timestamp': str(timestamp),
+                'X-Signature': signature
             }
-            await websocket.send(json.dumps(subscribe_command))
-            print(f"Subscribed to orderbook_delta for {len(market_tickers)} markets.")
 
-            # Handle incoming messages
-            while True:
-                message = await websocket.recv()
-                await process_message(message)
+            params = {
+                "event_ticker": self.event_ticker,
+                "limit": 1000
+            }
 
-    except websockets.exceptions.ConnectionClosedError as e:
-        print(f"Connection closed unexpectedly: {e}")
-        # Implement reconnection logic here if needed.
-    except Exception as e:
-        print(f"An error occurred: {e}")
+            response = requests.get(
+                f"{self.rest_base_url}/markets",
+                headers=headers,
+                params=params
+            )
 
-async def get_market_tickers(event_ticker):
-    """Retrieves market tickers for a given event ticker from the Kalshi API."""
-    params = {
-        "event_ticker": event_ticker,
-        "limit": 1000,
-    }
-    try:
-        response = requests.get(KALSHI_API_URL, params=params)
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-        markets = response.json().get("markets", [])
-        return [market["ticker"] for market in markets]
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching market tickers: {e}")
-        return []
+            if response.status_code == 200:
+                markets = response.json().get("markets", [])
+                if not markets:
+                    self.logger.warning(f"No markets found for event ticker: {self.event_ticker}")
+                    return None
+                tickers = [market["ticker"] for market in markets]
+                self.logger.info(f"Markets found for event {self.event_ticker}:")
+                for ticker in tickers:
+                    self.logger.info(ticker)
+                return tickers
+            else:
+                self.logger.error(f"Failed to fetch markets: {response.status_code} - {response.text}")
+                return None
 
-async def process_message(message):
-    """Processes incoming websocket messages and extracts orderbook data."""
-    try:
-        data = json.loads(message)
-        if data.get("type") == "orderbook_snapshot":
-            market_ticker = data["msg"]["market_ticker"]
-            yes_orders = data["msg"].get("yes", [])
-            no_orders = data["msg"].get("no", [])
+        except Exception as e:
+            self.logger.error(f"Error fetching markets: {e}")
+            traceback.print_exc()
+            return None
 
-            top_yes_bid = yes_orders[-1][0] if yes_orders else None #last yes order is the highest bid.
-            top_no_bid = no_orders[-1][0] if no_orders else None #last no order is the highest bid.
-            top_yes_ask = yes_orders[0][0] if yes_orders else None #first yes order is the lowest ask
-            top_no_ask = no_orders[0][0] if no_orders else None #first no order is the lowest ask
-            print(f"Market: {market_ticker}")
-            print(f"  Yes Bid: {top_yes_bid}, Yes Ask: {top_yes_ask}")
-            print(f"  No Bid: {top_no_bid}, No Ask: {top_no_ask}")
+    async def connect_websocket(self, max_retries=3):
+        """Connect to WebSocket and subscribe to orderbook_delta channel."""
+        tickers = self.fetch_markets_by_event()
+        if not tickers:
+            self.logger.error("No valid market tickers available. Exiting.")
+            return
+        self.market_ticker = tickers[0]  # Use first market ticker
+        self.logger.info(f"Selected market ticker: {self.market_ticker}")
 
+        for attempt in range(max_retries):
+            try:
+                timestamp = int(time.time())  # Fresh timestamp
+                signature = self.generate_signature(timestamp)
+
+                headers = {
+                    'X-API-Key': self.api_key,
+                    'X-Timestamp': str(timestamp),
+                    'X-Signature': signature
+                }
+
+                self.logger.debug(f"Attempt {attempt + 1}/{max_retries} - Headers: {headers}")
+
+                async with websockets.connect(
+                    self.websocket_url,
+                    extra_headers=headers,
+                    ping_interval=10,  # Client-side heartbeat every 10s
+                    ping_timeout=20
+                ) as websocket:
+                    self.logger.info("WebSocket connection established successfully!")
+
+                    # Subscribe to orderbook_delta channel
+                    subscription_message = {
+                        "id": 1,
+                        "cmd": "subscribe",
+                        "params": {
+                            "channels": ["orderbook_delta"],
+                            "market_tickers": [self.market_ticker]
+                        }
+                    }
+                    await websocket.send(json.dumps(subscription_message))
+                    self.logger.info(f"Sent subscription: {json.dumps(subscription_message)}")
+
+                    # Listen for messages
+                    while True:
+                        try:
+                            message = await websocket.recv()
+                            data = json.loads(message)
+                            self.process_message(data)
+                        except websockets.ConnectionClosed:
+                            self.logger.error("WebSocket connection closed unexpectedly")
+                            break
+
+            except websockets.exceptions.InvalidStatusCode as e:
+                self.logger.error(f"WebSocket connection rejected: HTTP {e.status_code}")
+                self.logger.debug(f"Response headers: {e.headers}")
+                # Attempt to fetch the response body manually if possible
+                if hasattr(e, 'response') and e.response:
+                    try:
+                        body = await e.response.read()
+                        self.logger.debug(f"Response body: {body.decode('utf-8')}")
+                    except Exception as read_err:
+                        self.logger.debug(f"Could not read response body: {read_err}")
+                if attempt < max_retries - 1:
+                    self.logger.info("Retrying with fresh timestamp in 2 seconds...")
+                    await asyncio.sleep(2)
+                else:
+                    self.logger.error("Max retries reached. Check credentials or signature format.")
+                    break
+            except Exception as e:
+                self.logger.error(f"Unexpected error: {e}")
+                traceback.print_exc()
+                break
+
+    def process_message(self, data):
+        """Process incoming WebSocket messages."""
+        self.logger.debug(f"Received message: {json.dumps(data, indent=2)}")
+        if data.get("type") == "subscribed":
+            self.logger.info(f"Successfully subscribed to channel: {data['msg']['channel']} (sid: {data['msg']['sid']})")
+        elif data.get("type") == "orderbook_snapshot":
+            self.logger.info(f"Orderbook snapshot for {data['msg']['market_ticker']}:")
+            self.logger.info(f"Yes: {data['msg'].get('yes', [])}")
+            self.logger.info(f"No: {data['msg'].get('no', [])}")
         elif data.get("type") == "orderbook_delta":
-            market_ticker = data["msg"]["market_ticker"]
-            price = data["msg"]["price"]
-            delta = data["msg"]["delta"]
-            side = data["msg"]["side"]
-            print(f"Orderbook Delta: {market_ticker}, Side: {side}, Price: {price}, Delta: {delta}")
-
-        elif data.get("type") == "subscribed":
-            print(f"Subscription successful: {data['msg']['channel']}")
+            self.logger.info(f"Orderbook delta for {data['msg']['market_ticker']}: "
+                           f"Price={data['msg']['price']}, Delta={data['msg']['delta']}, Side={data['msg']['side']}")
         elif data.get("type") == "error":
-            print(f"Error: {data}")
+            self.logger.error(f"Error from server: {data['msg']['msg']} (code: {data['msg']['code']})")
         else:
-            print(f"Received message: {data}")
+            self.logger.info(f"Unhandled message type: {data.get('type')}")
 
-    except json.JSONDecodeError:
-        print(f"Received invalid JSON: {message}")
-    except KeyError as e:
-        print(f"Missing key in message: {e}")
-    except Exception as e:
-        print(f"Error processing message: {e}")
+def main():
+    API_KEY = os.getenv('KALSHI_API_KEY')
+    PRIVATE_KEY = os.getenv('KALSHI_PRIVATE_KEY')
 
-async def main():
-    """Main function to start the websocket connection."""
-    api_key = os.environ.get("KALSHI_API_KEY")
-    event_ticker = "KXELONTWEETS-25MAR28"
-
-    if not api_key:
-        print("Error: KALSHI_API_KEY environment variable not set.")
+    if not API_KEY or not PRIVATE_KEY:
+        print("Error: KALSHI_API_KEY or KALSHI_PRIVATE_KEY not found in .env file")
         return
 
-    await connect_and_subscribe(api_key, event_ticker)
+    client = KalshiWebSocketClient(API_KEY, PRIVATE_KEY)
+    asyncio.run(client.connect_websocket())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
