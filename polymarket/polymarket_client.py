@@ -1,115 +1,50 @@
-import websocket # type: ignore
+import websocket
 import json
 import threading
 import time
 
-# WebSocket URL remains the same
-WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+class PolymarketClient:
+    def __init__(self):
+        self.ws_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+        self.token_ids = [
+            "82105904644975819467254459740176869998531989708711808131488940440519696534822",  # 450-474 Yes
+            "103375030657321264814701483740101162210535970159432445623129568287514615958573",  # 450-474 No
+            "69442592080794478573959779833784433036273422503780746452193547006928387926589",  # 475-499 Yes
+            "78542726175952526631472130854138525311624553971570647007294131780992415355449"   # 475-499 No
+        ]
+        self.order_books = {}
 
-# Your condition ID and token IDs
-CONDITION_ID = "0xffd304f794ccaf0865b3439a9896b913f6b67cd80a8232b90995c1d677abdafe"
-TOKEN_IDS = [
-    "34514114863322627680457157635291519318888291560742008349482353310458205545820",
-    "78596944446852283499572797867112481351139926006255725298418233324123094896120",
-]
+    def _on_message(self, ws, message):
+        data_list = json.loads(message)
+        if not isinstance(data_list, list):
+            data_list = [data_list]
+        for data in data_list:
+            if data.get("event_type") == "book":
+                asset_id = data["asset_id"]
+                self.order_books[asset_id] = {
+                    "bids": [(float(bid["price"]), float(bid["size"])) for bid in data["bids"]],
+                    "asks": [(float(ask["price"]), float(ask["size"])) for ask in data["asks"]]
+                }
+            # Ignore price_change for now
 
-# Global dictionary to store the latest order book for each asset
-order_books = {}
+    def _on_open(self, ws):
+        subscribe_message = {
+            "assets_ids": self.token_ids,
+            "type": "market"
+        }
+        ws.send(json.dumps(subscribe_message))
 
-def on_message(ws, message):
-    """Handle incoming WebSocket messages."""
-    try:
-        data = json.loads(message)
-        print("Received data:", json.dumps(data, indent=2))
-        
-        # Handle book updates
-        if data.get("event_type") == "book":
-            asset_id = data["asset_id"]
-            order_books[asset_id] = {
-                "bids": [(float(bid["price"]), float(bid["size"])) for bid in data["buys"]],
-                "asks": [(float(ask["price"]), float(ask["size"])) for ask in data["sells"]]
-            }
-            print(f"\nUpdated order book for asset {asset_id}:")
-            print("Bids:", order_books[asset_id]["bids"])
-            print("Asks:", order_books[asset_id]["asks"])
-        
-        # Handle price change events
-        elif data.get("event_type") == "price_change":
-            asset_id = data["asset_id"]
-            print(f"\nPrice change for asset {asset_id}:")
-            for change in data["changes"]:
-                print(f"Side: {change['side']}, Price: {change['price']}, Size: {change['size']}")
-        
-        # Handle tick size change events
-        elif data.get("event_type") == "tick_size_change":
-            asset_id = data["asset_id"]
-            print(f"\nTick size change for asset {asset_id}:")
-            print(f"Old tick size: {data['old_tick_size']}, New tick size: {data['new_tick_size']}")
-            
-    except Exception as e:
-        print(f"Error processing message: {e}")
-        print(f"Raw message: {message}")
+    def run(self):
+        ws = websocket.WebSocketApp(
+            self.ws_url,
+            on_open=self._on_open,
+            on_message=self._on_message,
+            on_error=lambda ws, error: print(f"Error: {error}"),
+            on_close=lambda ws, code, msg: print(f"Closed: {code}, {msg}")
+        )
+        wst = threading.Thread(target=ws.run_forever, kwargs={"ping_interval": 30, "ping_timeout": 10})
+        wst.daemon = True
+        wst.start()
 
-def on_error(ws, error):
-    """Handle WebSocket errors."""
-    print(f"Error: {error}")
-
-def on_close(ws, close_status_code, close_msg):
-    """Handle WebSocket closure."""
-    print(f"Connection closed. Status code: {close_status_code}, Message: {close_msg}")
-    print("Attempting to reconnect in 5 seconds...")
-    time.sleep(5)
-    start_websocket()
-
-def on_open(ws):
-    """Subscribe to the market channel on connection."""
-    # According to docs, for market channel, we only need to include assets_ids
-    subscribe_message = {
-        "assets_ids": TOKEN_IDS,
-        "type": "market"
-    }
-    
-    print("Sending subscription message:", json.dumps(subscribe_message, indent=2))
-    ws.send(json.dumps(subscribe_message))
-    print(f"Subscribed to assets: {TOKEN_IDS}")
-
-def start_websocket():
-    """Start a new WebSocket connection."""
-    print("Starting WebSocket connection...")
-    websocket.enableTrace(True)
-    
-    ws = websocket.WebSocketApp(
-        WS_URL,
-        on_open=on_open,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
-    )
-    ws.run_forever(ping_interval=30, ping_timeout=10)
-
-def run_websocket():
-    """Run the WebSocket client with reconnection logic."""
-    while True:
-        try:
-            start_websocket()
-        except Exception as e:
-            print(f"Error in WebSocket connection: {e}")
-            print("Retrying in 5 seconds...")
-            time.sleep(5)
-
-if __name__ == "__main__":
-    # Run the WebSocket in a separate thread
-    thread = threading.Thread(target=run_websocket)
-    thread.daemon = True
-    thread.start()
-    print("WebSocket client started. Listening for market data...")
-    
-    # Keep the main thread alive
-    try:
-        while True:
-            user_input = input("Press 'q' and Enter to quit: ")
-            if user_input.lower() == 'q':
-                break
-    except KeyboardInterrupt:
-        print("Shutting down...")
-    print("Program terminated")
+    def get_order_books(self):
+        return self.order_books
