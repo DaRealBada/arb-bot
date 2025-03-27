@@ -3,10 +3,10 @@ import json
 import base64
 import time
 import os
-from dotenv import load_dotenv
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-import websockets
+from dotenv import load_dotenv # type: ignore
+from cryptography.hazmat.primitives import serialization, hashes # type: ignore
+from cryptography.hazmat.primitives.asymmetric import padding # type: ignore
+import websockets # type: ignore
 
 class KalshiClient:
     def __init__(self):
