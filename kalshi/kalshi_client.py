@@ -2,11 +2,11 @@ import asyncio
 import json
 import base64
 import time
-from dotenv import load_dotenv
+from dotenv import load_dotenv # type: ignore
 import os
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-import websockets
+from cryptography.hazmat.primitives import serialization, hashes # type: ignore
+from cryptography.hazmat.primitives.asymmetric import padding # type: ignore
+import websockets # type: ignore
 
 # Load environment variables
 load_dotenv()
