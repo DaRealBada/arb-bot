@@ -1,70 +1,65 @@
-import websocket
+import asyncio
 import json
-import ssl
+import base64
+import time  # Added this import
+from dotenv import load_dotenv
+import os
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+import websockets
 
-# WebSocket URL
-ws_url = "wss://api.elections.kalshi.com/trade-api/ws/v2"
+# Load environment variables
+load_dotenv()
 
-# Replace with your actual API key
-api_key = "ae6bd97f-d772-40be-b17e-2e44077c-0d6a-4574-b8c7-d0265fef6323"
-headers = {
-    "Authorization": f"Bearer {api_key}",
-    "accept": "application/json"
-}
+# Get credentials from .env
+KEYID = os.getenv("KALSHI_API_KEY")  # Your KEYID
+KEYFILE = os.getenv("KALSHI_PRIVATE_KEY")  # Path to rsa-key.pem
 
-# File to save data
-output_file = "markets-data.json"
+# Load the private key
+try:
+    with open(KEYFILE, "rb") as key_file:
+        private_key = serialization.load_pem_private_key(key_file.read(), password=None)
+except FileNotFoundError:
+    raise FileNotFoundError(f"Private key file not found at {KEYFILE}")
 
-# Subscription command
-subscription_cmd = {
-    "id": 1,
-    "cmd": "subscribe",
-    "params": {
-        "channels": ["ticker"],
-        "market_tickers": ["KXELONTWEETS-25MAR28"]
+# WebSocket URL (production environment)
+WS_URL = "wss://api.elections.kalshi.com/trade-api/ws/v2"
+
+# Generate authentication headers
+def get_auth_headers(key_id, private_key, path="/trade-api/ws/v2"):
+    current_time_ms = int(time.time() * 1000)
+    timestamp_str = str(current_time_ms)
+    message = timestamp_str + "GET" + path
+    signature = private_key.sign(
+        message.encode('utf-8'),
+        padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.DIGEST_LENGTH),
+        hashes.SHA256()
+    )
+    return {
+        "Content-Type": "application/json",
+        "KALSHI-ACCESS-KEY": key_id,
+        "KALSHI-ACCESS-SIGNATURE": base64.b64encode(signature).decode('utf-8'),
+        "KALSHI-ACCESS-TIMESTAMP": timestamp_str,
     }
-}
 
-# Enable WebSocket debugging
-websocket.enableTrace(True)
+# WebSocket connection
+async def connect_websocket():
+    headers = get_auth_headers(KEYID, private_key)
+    try:
+        async with websockets.connect(WS_URL, extra_headers=headers, ping_interval=10) as websocket:
+            print("WebSocket connection established")
+            # Subscribe to a ticker channel
+            await websocket.send(json.dumps({
+                "id": 1,
+                "cmd": "subscribe",
+                "params": {"channels": ["ticker"], "market_tickers": ["KXELONTWEETS-25MAR28"]}
+            }))
+            # Listen for messages
+            async for message in websocket:
+                data = json.loads(message)
+                print("Received:", data)
+    except Exception as e:
+        print(f"Error: {e}")
 
-def on_open(ws):
-    print("Connected to Kalshi WebSocket")
-    ws.send(json.dumps(subscription_cmd))
-
-def on_message(ws, message):
-    data = json.loads(message)
-    print("Received:", data)
-    if data.get("type") == "subscribed":
-        print(f"Subscribed to {data['msg']['channel']} with sid {data['msg']['sid']}")
-    elif data.get("type") == "ticker":
-        with open(output_file, 'w') as file:
-            json.dump(data["msg"], file, indent=4)
-        print(f"Ticker data saved to {output_file}")
-    elif data.get("type") == "error":
-        print(f"Error: {data['msg']}")
-
-def on_error(ws, error):
-    print("WebSocket error:", error)
-
-def on_close(ws, close_status_code, close_msg):
-    print("WebSocket closed:", close_msg, "Status code:", close_status_code)
-
-# Set up and run WebSocket
-print("Headers being sent:", headers)
-ws = websocket.WebSocketApp(
-    ws_url,
-    header=headers,
-    on_open=on_open,
-    on_message=on_message,
-    on_error=on_error,
-    on_close=on_close
-)
-
-ws.run_forever(
-    sslopt={"cert_reqs": ssl.CERT_REQUIRED},
-    ping_interval=10,
-    ping_timeout=5
-)
-
-print("WebSocket connection terminated")
+# Run the WebSocket
+asyncio.run(connect_websocket())

@@ -2,3 +2,5 @@ py-clob-client
 web3
 requests
 websocket-client
+cryptography
+python-dotenv

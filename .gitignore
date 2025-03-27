@@ -9,6 +9,7 @@ __pycache__/
 
 # Sensitive files
 .env
+*.pem
 
 # Logs and temporary files
 *.log
