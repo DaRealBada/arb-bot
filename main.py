@@ -19,7 +19,7 @@ async def main():
     try:
         while True:
             order_book_manager.print_comparison()
-            await asyncio.sleep(5)
+            await asyncio.sleep(2)
     except KeyboardInterrupt:
         print("Shutting down...")
         kalshi_task.cancel()
