@@ -14,7 +14,7 @@ async def main():
     kalshi_task = asyncio.create_task(run_kalshi(kalshi_client))
     
     # Wait longer for initial data
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
 
     try:
         while True:
