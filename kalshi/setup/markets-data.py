@@ -6,7 +6,7 @@ url = "https://api.elections.kalshi.com/trade-api/v2/markets"
 
 # Parameters for the markets API
 params = {
-    "event_ticker": "KXELONTWEETS-25MAR28",  # You can filter by event ticker
+    "event_ticker": "KXELONTWEETS-25APR11",  # You can filter by event ticker
     "limit": 1000  # Maximum number of results per page
 }
 

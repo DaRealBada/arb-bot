@@ -5,7 +5,7 @@ url = "https://gamma-api.polymarket.com/events"
 params = {
     "limit": 20,
     "active": True, 
-    "slug": "elon-musk-of-tweets-mar-21-28"
+    "slug": "elon-musk-of-tweets-april-4-11"
 }
 
 response = requests.get(url, params=params)
