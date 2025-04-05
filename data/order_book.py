@@ -44,6 +44,19 @@ class OrderBookManager:
     def print_comparison(self):
         comparison = self.compare_specific_markets()
         print("\nKalshi (450-499) vs Polymarket (450-474) vs Polymarket (475-499)")
+
+        # Print Asks
+        print("Asks:")
+        kalshi_asks = comparison["kalshi_450_499"]["yes"]["asks"]
+        poly_450_474_asks = comparison["poly_450_474"]["yes"]["asks"]
+        poly_475_499_asks = comparison["poly_475_499"]["yes"]["asks"]
+        max_asks = max(len(kalshi_asks), len(poly_450_474_asks), len(poly_475_499_asks))
+        
+        for i in range(max_asks):
+            k_ask = kalshi_asks[i] if i < len(kalshi_asks) else (None, None)
+            p1_ask = poly_450_474_asks[i] if i < len(poly_450_474_asks) else (None, None)
+            p2_ask = poly_475_499_asks[i] if i < len(poly_475_499_asks) else (None, None)
+            print(f"  Kalshi: {k_ask} | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
         
         # Print Bids
         print("Bids:")
@@ -58,15 +71,3 @@ class OrderBookManager:
             p2_bid = poly_475_499_bids[i] if i < len(poly_475_499_bids) else (None, None)
             print(f"  Kalshi: {k_bid} | Poly 450-474: {p1_bid} | Poly 475-499: {p2_bid}")
 
-        # Print Asks
-        print("Asks:")
-        kalshi_asks = comparison["kalshi_450_499"]["yes"]["asks"]
-        poly_450_474_asks = comparison["poly_450_474"]["yes"]["asks"]
-        poly_475_499_asks = comparison["poly_475_499"]["yes"]["asks"]
-        max_asks = max(len(kalshi_asks), len(poly_450_474_asks), len(poly_475_499_asks))
-        
-        for i in range(max_asks):
-            k_ask = kalshi_asks[i] if i < len(kalshi_asks) else (None, None)
-            p1_ask = poly_450_474_asks[i] if i < len(poly_450_474_asks) else (None, None)
-            p2_ask = poly_475_499_asks[i] if i < len(poly_475_499_asks) else (None, None)
-            print(f"  Kalshi: {k_ask} | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
