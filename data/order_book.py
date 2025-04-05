@@ -10,16 +10,16 @@ class OrderBookManager:
 
     def compare_specific_markets(self):
         self.update_order_books()
-        kalshi_ticker = "KXELONTWEETS-25MAR28-474.5"
+        kalshi_ticker = "KXELONTWEETS-25APR11-324.5"
         kalshi_book = self.combined_order_books["kalshi"].get(kalshi_ticker, {"yes": {}, "no": {}})
         # Normalize Kalshi prices to dollars
         kalshi_yes_bids = sorted([(float(price) / 100, qty) for price, qty in kalshi_book["yes"].items()], reverse=True)
         kalshi_yes_asks = sorted([(float(price) / 100, qty) for price, qty in kalshi_book["no"].items()])
 
-        poly_450_474_yes = "8210590464497581946725445974017686999853198970871180813488940440519696534822"
-        poly_450_474_no = "103375030657321264814701483740101162210535970159432445623129568287514615958573"
-        poly_475_499_yes = "69442592080794478573959779833784433036273422503780746452193547006928387926589"
-        poly_475_499_no = "78542726175952526631472130854138525311624553971570647007294131780992415355449"
+        poly_450_474_yes = "104581834088683874933735763737237194006527779800533746604473663562104487090909"
+        poly_450_474_no = "93466472616546736282903537705194142846363083134234705550446425815008134085963"
+        poly_475_499_yes = "43922231291025458841678228188174245727138103045821098415263506359671185443258"
+        poly_475_499_no = "53375664434999366377314207204893340538836417260918196297938671959351160828263"
 
         poly_450_474_book = {
             "yes": self.combined_order_books["polymarket"].get(poly_450_474_yes, {"bids": [], "asks": []}),

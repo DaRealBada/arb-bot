@@ -56,7 +56,7 @@ class KalshiClient:
 
     async def run(self):
         headers = self._get_auth_headers()
-        market_tickers = ["KXELONTWEETS-25MAR28-474.5"]
+        market_tickers = ["KXELONTWEETS-25APR11-324.5"]
         async with websockets.connect(self.ws_url, extra_headers=headers, ping_interval=10) as websocket:
             subscription_message = json.dumps({
                 "id": 1,
