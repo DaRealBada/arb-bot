@@ -56,7 +56,14 @@ class OrderBookManager:
             k_ask = kalshi_asks[i] if i < len(kalshi_asks) else (None, None)
             p1_ask = poly_450_474_asks[i] if i < len(poly_450_474_asks) else (None, None)
             p2_ask = poly_475_499_asks[i] if i < len(poly_475_499_asks) else (None, None)
-            print(f"  Kalshi: {k_ask} | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
+
+            k_price, k_size = k_ask
+            if k_price is not None:
+                # Convert Kalshi yes price to no side (or vice versa)
+                k_converted_price = round(1 - k_price, 2)
+                print(f"  Kalshi: {k_ask} (converted: {k_converted_price}) | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
+            else:
+                print(f"  Kalshi: {k_ask} | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
         
         # Print Bids
         print("Bids:")
