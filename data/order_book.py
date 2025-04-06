@@ -9,12 +9,11 @@ class OrderBookManager:
         self.combined_order_books["polymarket"] = self.polymarket_client.get_order_books()
 
     def compare_specific_markets(self):
-        self.update_order_books()
+        # No need to call update_order_books() here if called in main loop
         kalshi_ticker = "KXELONTWEETS-25APR11-324.5"
         kalshi_book = self.combined_order_books["kalshi"].get(kalshi_ticker, {"yes": {}, "no": {}})
-        # Normalize Kalshi prices to dollars
         kalshi_yes_bids = sorted([(float(price) / 100, qty) for price, qty in kalshi_book["yes"].items()], reverse=True)
-        kalshi_yes_asks = sorted([(float(price) / 100, qty) for price, qty in kalshi_book["no"].items()])
+        kalshi_yes_asks = sorted([(1 - float(price) / 100, qty) for price, qty in kalshi_book["no"].items()])
 
         poly_450_474_yes = "104581834088683874933735763737237194006527779800533746604473663562104487090909"
         poly_450_474_no = "93466472616546736282903537705194142846363083134234705550446425815008134085963"
@@ -59,11 +58,14 @@ class OrderBookManager:
 
             k_price, k_size = k_ask
             if k_price is not None:
-                # Convert Kalshi yes price to no side (or vice versa)
-                k_converted_price = round(1 - k_price, 2)
-                print(f"  Kalshi: {k_ask} (converted to match polymarket: {k_converted_price}) | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
+                k_str = f"{k_price:.2f} ({k_size})"
             else:
-                print(f"  Kalshi: {k_ask} | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
+                k_str = "(None, None)"
+            
+            p1_str = f"({p1_ask[0]:.2f}, {p1_ask[1]:.2f})" if p1_ask[0] is not None else "(None, None)"
+            p2_str = f"({p2_ask[0]:.2f}, {p2_ask[1]:.2f})" if p2_ask[0] is not None else "(None, None)"
+            
+            print(f"  Kalshi: {k_str} | Poly 450-474: {p1_str} | Poly 475-499: {p2_str}")
         
         # Print Bids
         print("Bids:")
@@ -76,5 +78,7 @@ class OrderBookManager:
             k_bid = kalshi_bids[i] if i < len(kalshi_bids) else (None, None)
             p1_bid = poly_450_474_bids[i] if i < len(poly_450_474_bids) else (None, None)
             p2_bid = poly_475_499_bids[i] if i < len(poly_475_499_bids) else (None, None)
-            print(f"  Kalshi: {k_bid} | Poly 450-474: {p1_bid} | Poly 475-499: {p2_bid}")
-
+            k_str = f"({k_bid[0]:.2f}, {k_bid[1]:.2f})" if k_bid[0] is not None else "(None, None)"
+            p1_str = f"({p1_bid[0]:.2f}, {p1_bid[1]:.2f})" if p1_bid[0] is not None else "(None, None)"
+            p2_str = f"({p2_bid[0]:.2f}, {p2_bid[1]:.2f})" if p2_bid[0] is not None else "(None, None)"
+            print(f"  Kalshi: {k_str} | Poly 450-474: {p1_str} | Poly 475-499: {p2_str}")
