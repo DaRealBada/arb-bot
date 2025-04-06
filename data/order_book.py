@@ -61,7 +61,7 @@ class OrderBookManager:
             if k_price is not None:
                 # Convert Kalshi yes price to no side (or vice versa)
                 k_converted_price = round(1 - k_price, 2)
-                print(f"  Kalshi: {k_ask} (converted: {k_converted_price}) | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
+                print(f"  Kalshi: {k_ask} (converted to match polymarket: {k_converted_price}) | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
             else:
                 print(f"  Kalshi: {k_ask} | Poly 450-474: {p1_ask} | Poly 475-499: {p2_ask}")
         
