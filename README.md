@@ -1,3 +1,4 @@
+<img src="assets\arbitrage_opportunities.png">
 # Arb-Bot
 An arbitrage bot for Polymarket and Kalshi.
 
