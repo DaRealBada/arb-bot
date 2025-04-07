@@ -1,6 +1,6 @@
 <img src="assets\arbitrage_opportunities.png">
 # Arb-Bot<br>
-An arbitrage bot for Polymarket and Kalshi.<br>
+An arbitrage bot for Polymarket and Kalshi.<br><br>
 
 Overview:<br>
 This project implements real-time market data monitoring and arbitrage opportunity detection across different prediction market platforms. It's designed to identify situations where the combined probability of split markets on one platform differs from the unified market on another platform, creating risk-free profit opportunities.
