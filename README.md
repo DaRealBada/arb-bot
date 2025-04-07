@@ -7,10 +7,10 @@ This project implements real-time market data monitoring and arbitrage opportuni
 
 Key Features:
 
--Real-time order book monitoring for both Polymarket and Kalshi platforms
--Cross-platform arbitrage detection using advanced pricing formulas
--Automated opportunity identification with profit and maximum size calculations
--Modular architecture for easy extension to other prediction markets
+-Real-time order book monitoring for both Polymarket and Kalshi platforms<br>
+-Cross-platform arbitrage detection using advanced pricing formulas<br>
+-Automated opportunity identification with profit and maximum size calculations<br>
+-Modular architecture for easy extension to other prediction markets<br>
 
 Market Focus
 This project is designed to operate in hard-to-predict markets.
