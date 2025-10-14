@@ -1,84 +1,64 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
+# This dictionary connects the bot's market names to the client's token IDs.
+# --- UPDATED: Only includes the 5 Fed Rate Cuts outcomes ---
+POLYMARKET_MAPPING = { 
+    "poly_fed_0_cuts": { 
+        "yes_token_id": "13233824300645009841804910385973797437703578792070081033285141695415842858595"
+    },
+    "poly_fed_1_cuts": { 
+        "yes_token_id": "10045187747802872322312675685790615591321458882585258288544975549723385759902"
+    },
+    "poly_fed_2_cuts": { 
+        "yes_token_id": "14093902307297906954201103723329972551406567362846995641774213702167306236968"
+    },
+    "poly_fed_3_cuts": { 
+        "yes_token_id": "15923832924375086576839356391965581692257002061291888365842600290947761007971"
+    },
+    "poly_fed_4_cuts": { 
+        "yes_token_id": "16838383218556485897042048995392576326164221761623916295744211186717523171887"
+    },
+}
+
 class OrderBookManager:
     def __init__(self, kalshi_client, polymarket_client):
-        self.kalshi_client = kalshi_client
         self.polymarket_client = polymarket_client
-        self.combined_order_books = {"kalshi": {}, "polymarket": {}}
+        self.combined_order_books = {"polymarket": {}}
 
     def update_order_books(self):
-        self.combined_order_books["kalshi"] = self.kalshi_client.get_order_books()
-        self.combined_order_books["polymarket"] = self.polymarket_client.get_order_books()
+        """Fetches the latest order books from the Polymarket client."""
+        if self.polymarket_client:
+            self.combined_order_books["polymarket"] = self.polymarket_client.get_order_books()
 
     def compare_specific_markets(self):
-        # No need to call update_order_books() here if called in main loop
-        kalshi_ticker = "KXELONTWEETS-25APR11-324.5"
-        kalshi_book = self.combined_order_books["kalshi"].get(kalshi_ticker, {"yes": {}, "no": {}})
-        kalshi_yes_bids = sorted([(float(price) / 100, qty) for price, qty in kalshi_book["yes"].items()], reverse=True)
-        kalshi_yes_asks = sorted([(1 - float(price) / 100, qty) for price, qty in kalshi_book["no"].items()])
+        """
+        Processes the raw order book data and organizes it using the readable names
+        from POLYMARKET_MAPPING for the arbitrage bot.
+        """
+        structured_books = {}
+        poly_books = self.combined_order_books.get("polymarket", {})
 
-        poly_450_474_yes = "104581834088683874933735763737237194006527779800533746604473663562104487090909"
-        poly_450_474_no = "93466472616546736282903537705194142846363083134234705550446425815008134085963"
-        poly_475_499_yes = "43922231291025458841678228188174245727138103045821098415263506359671185443258"
-        poly_475_499_no = "53375664434999366377314207204893340538836417260918196297938671959351160828263"
+        if not poly_books:
+            logger.warning("Polymarket order book data is empty in OrderBookManager.")
+            for market_slug in POLYMARKET_MAPPING.keys():
+                structured_books[market_slug] = {"yes": {"bids": [], "asks": []}}
+            return structured_books
 
-        poly_450_474_book = {
-            "yes": self.combined_order_books["polymarket"].get(poly_450_474_yes, {"bids": [], "asks": []}),
-            "no": self.combined_order_books["polymarket"].get(poly_450_474_no, {"bids": [], "asks": []})
-        }
-        poly_475_499_book = {
-            "yes": self.combined_order_books["polymarket"].get(poly_475_499_yes, {"bids": [], "asks": []}),
-            "no": self.combined_order_books["polymarket"].get(poly_475_499_no, {"bids": [], "asks": []})
-        }
+        for market_slug, token_info in POLYMARKET_MAPPING.items():
+            yes_token_id = token_info["yes_token_id"]
 
-        poly_450_474_yes_bids = sorted(poly_450_474_book["yes"]["bids"], reverse=True)
-        poly_450_474_yes_asks = sorted(poly_450_474_book["yes"]["asks"])
-        poly_475_499_yes_bids = sorted(poly_475_499_book["yes"]["bids"], reverse=True)
-        poly_475_499_yes_asks = sorted(poly_475_499_book["yes"]["asks"])
+            yes_order_book = poly_books.get(yes_token_id, {"bids": [], "asks": []})
 
-        return {
-            "kalshi_450_499": {"yes": {"bids": kalshi_yes_bids, "asks": kalshi_yes_asks}},
-            "poly_450_474": {"yes": {"bids": poly_450_474_yes_bids, "asks": poly_450_474_yes_asks}},
-            "poly_475_499": {"yes": {"bids": poly_475_499_yes_bids, "asks": poly_475_499_yes_asks}}
-        }
+            structured_books[market_slug] = {
+                "yes": {
+                    "bids": sorted(yes_order_book.get("bids", []), reverse=True),
+                    "asks": sorted(yes_order_book.get("asks", []))
+                }
+            }
+        
+        return structured_books
 
     def print_comparison(self):
-        comparison = self.compare_specific_markets()
-        print("\nKalshi (450-499) vs Polymarket (450-474) vs Polymarket (475-499)")
-
-        # Print Asks
-        print("Asks:")
-        kalshi_asks = comparison["kalshi_450_499"]["yes"]["asks"]
-        poly_450_474_asks = comparison["poly_450_474"]["yes"]["asks"]
-        poly_475_499_asks = comparison["poly_475_499"]["yes"]["asks"]
-        max_asks = max(len(kalshi_asks), len(poly_450_474_asks), len(poly_475_499_asks))
-        
-        for i in range(max_asks):
-            k_ask = kalshi_asks[i] if i < len(kalshi_asks) else (None, None)
-            p1_ask = poly_450_474_asks[i] if i < len(poly_450_474_asks) else (None, None)
-            p2_ask = poly_475_499_asks[i] if i < len(poly_475_499_asks) else (None, None)
-
-            k_price, k_size = k_ask
-            if k_price is not None:
-                k_str = f"{k_price:.2f} ({k_size})"
-            else:
-                k_str = "(None, None)"
-            
-            p1_str = f"({p1_ask[0]:.2f}, {p1_ask[1]:.2f})" if p1_ask[0] is not None else "(None, None)"
-            p2_str = f"({p2_ask[0]:.2f}, {p2_ask[1]:.2f})" if p2_ask[0] is not None else "(None, None)"
-            
-            print(f"  Kalshi: {k_str} | Poly 450-474: {p1_str} | Poly 475-499: {p2_str}")
-        
-        # Print Bids
-        print("Bids:")
-        kalshi_bids = comparison["kalshi_450_499"]["yes"]["bids"]
-        poly_450_474_bids = comparison["poly_450_474"]["yes"]["bids"]
-        poly_475_499_bids = comparison["poly_475_499"]["yes"]["bids"]
-        max_bids = max(len(kalshi_bids), len(poly_450_474_bids), len(poly_475_499_bids))
-        
-        for i in range(max_bids):
-            k_bid = kalshi_bids[i] if i < len(kalshi_bids) else (None, None)
-            p1_bid = poly_450_474_bids[i] if i < len(poly_450_474_bids) else (None, None)
-            p2_bid = poly_475_499_bids[i] if i < len(poly_475_499_bids) else (None, None)
-            k_str = f"({k_bid[0]:.2f}, {k_bid[1]:.2f})" if k_bid[0] is not None else "(None, None)"
-            p1_str = f"({p1_bid[0]:.2f}, {p1_bid[1]:.2f})" if p1_bid[0] is not None else "(None, None)"
-            p2_str = f"({p2_bid[0]:.2f}, {p2_bid[1]:.2f})" if p2_bid[0] is not None else "(None, None)"
-            print(f"  Kalshi: {k_str} | Poly 450-474: {p1_str} | Poly 475-499: {p2_str}")
+        print("Comparison printout is disabled in arbitrage mode.")
