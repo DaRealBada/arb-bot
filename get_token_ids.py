@@ -1,55 +1,92 @@
 import requests
 import json
 import sys
+import logging
 
-# The market slug you want to fetch
-MARKET_SLUG = "fed-decision-in-october"  # <<< UPDATED TO NEW SLUG
+# Set up logging for clarity
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
-# FIXED: Correct URL format (no "slug=" in the path)
-url = f"https://gamma-api.polymarket.com/markets/{MARKET_SLUG}"
+# --- CONFIGURATION ---
+# The market slug for the Bitcoin price market
+MARKET_SLUG = "what-price-will-bitcoin-hit-in-2025"
 
-print(f"Fetching data for market: {MARKET_SLUG}")
-print(f"URL: {url}")
+# The endpoint for fetching a comprehensive list of events/markets
+# We use a high limit to ensure we capture the target market if it's recent
+API_URL = f"https://gamma-api.polymarket.com/events?closed=false&limit=50"
+# ---------------------
+
+logger.info(f"Attempting to fetch market data via /events endpoint...")
+logger.info(f"Using search URL: {API_URL}")
 
 try:
-    response = requests.get(url)
-    response.raise_for_status()  # Check for HTTP errors (like 422)
+    # 1. Fetch the data from the /events endpoint
+    response = requests.get(API_URL)
+    response.raise_for_status()
 
-    market_data = response.json()
+    events_data = response.json()
 
-    print("\n--- RAW API RESPONSE (Start) ---")
-    print(json.dumps(market_data, indent=2))
-    print("--- RAW API RESPONSE (End) ---\n")
-
-    if not market_data:
-        print("Error: The API returned an empty response. The market slug might be invalid or the market is unavailable.")
+    if not events_data or 'events' not in events_data:
+        logger.error("The API returned an unexpected or empty response from the /events endpoint.")
         sys.exit(1)
 
-    tokens_json = market_data.get('tokens', '[]')
+    target_market = None
     
-    # Try to load as JSON string, fallback to direct access if it's already an array
-    try:
-        tokens = json.loads(tokens_json)
-    except (json.JSONDecodeError, TypeError):
-        tokens = tokens_json if isinstance(tokens_json, list) else []
+    # 2. Iterate through all events to find the target market
+    for event in events_data['events']:
+        for market in event.get('markets', []):
+            if market.get('slug') == MARKET_SLUG:
+                target_market = market
+                break
+        if target_market:
+            break
 
-    print("\n--- Polymarket Token IDs (Asset IDs) ---")
-    if not tokens:
-        print("Error: Could not find token data in the response, check the raw output above.")
+    if not target_market:
+        logger.error(f"Error: Market with slug '{MARKET_SLUG}' was not found in the latest {len(events_data['events'])} events.")
         sys.exit(1)
 
-    for token in tokens:
-        # The 'outcome' for this market will be one of: "25 bps decrease", "No change", etc.
+    logger.info(f"Successfully located market data for: {target_market.get('question')}")
+    
+    # 3. Extract and parse the nested 'tokens' JSON string
+    tokens_json_string = target_market.get('tokens')
+    
+    if not tokens_json_string:
+        logger.error("The 'tokens' field was missing or empty in the market data.")
+        # Print the relevant market data for manual inspection
+        print("\n--- Market Data Snippet for Debugging ---")
+        print(json.dumps(target_market, indent=2))
+        print("-----------------------------------------\n")
+        sys.exit(1)
+
+    # CRITICAL STEP: Robustly parse the nested JSON string
+    try:
+        tokens_array = json.loads(tokens_json_string)
+    except json.JSONDecodeError:
+        logger.error(f"Failed to decode the nested 'tokens' JSON string. Data corrupted.")
+        sys.exit(1)
+    
+    # 4. Extract and display Token IDs
+    print("\n\n--- Polymarket Token IDs (Asset IDs) ---")
+    
+    if not tokens_array or not isinstance(tokens_array, list):
+        logger.error("Token data was successfully parsed but is not a list or is empty.")
+        sys.exit(1)
+
+    for token in tokens_array:
         outcome_name = token.get('outcome', 'N/A')
-        token_id = token.get('token_id', token.get('assetId', 'N/A'))
-        print(f"Outcome: {str(outcome_name).ljust(10)} | Token ID: {token_id}")
+        # Check for 'token_id' (common) and fallback to 'assetId' (sometimes used)
+        token_id = token.get('token_id', token.get('assetId', 'N/A')) 
+        
+        if token_id != 'N/A':
+            # Print cleanly
+            print(f"Outcome: {str(outcome_name):<30} | Token ID: {token_id}")
 
-    print("\n**Copy these Token IDs for use in your bot's POLYMARKET_MAPPING and PolymarketClient.**")
+    print("\n**SUCCESS: Copy the Token ID(s) needed for your bot's POLYMARKET_MAPPING.**")
 
-except requests.exceptions.RequestException as e:
-    print(f"Error fetching market data (HTTP Error): {e}")
+except requests.exceptions.HTTPError as e:
+    status_code = e.response.status_code
+    logger.error(f"HTTP Error {status_code}: The API call failed. Check internet/firewall.")
     sys.exit(1)
-
-except json.JSONDecodeError:
-    print("Error: Failed to decode JSON response. The API might have returned plain text or an error page.")
+except requests.exceptions.RequestException as e:
+    logger.error(f"A connection error occurred: {e}")
     sys.exit(1)
