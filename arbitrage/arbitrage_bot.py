@@ -28,9 +28,17 @@ class ArbitrageBot:
         self.opportunities = []
         
         # Iterate over ALL market slugs the bot is tracking.
-        # This ensures we scan every market, even if it had no data in the 'comparison' dict.
-        # Note: We rely on check_expired to handle cleanup.
         all_tracked_markets = self.order_book_manager.get_market_list()
+        
+        # --- CRASH FIX ADDED HERE ---
+        common_markets = self.order_book_manager.get_common_market_slugs() 
+        
+        # Only proceed with cross-platform checks if we have common markets
+        has_common_markets = bool(common_markets)
+        if not has_common_markets:
+            logger.warning("No common market slugs available for cross-platform arbitrage checks.")
+            # We still proceed to check for internal Polymarket arb, so we don't just 'return'
+        # --- END CRASH FIX ---
         
         for market_slug in all_tracked_markets:
             market_data = comparison.get(market_slug)
@@ -51,15 +59,13 @@ class ArbitrageBot:
                 self._check_internal_polymarket_arb(market_slug, question, poly_data)
 
             # B. Cross-Platform Arbitrage
-            # Check only if BOTH Polymarket and Limitless data are available
-            if poly_data and limitless_data:
-                # The logic inside here already fulfills your requirement: 
-                # "only be able to find arb oppurtunities across platforms only 
-                # when the same events and markets exist in both platforms."
+            # Check only if common markets exist AND BOTH Polymarket and Limitless data are available
+            if has_common_markets and poly_data and limitless_data:
+                # The logic here is fine because market_slug is in common_markets 
+                # due to the logic in limitless_fetch.py
                 self._check_cross_platform_arb(market_slug, question, poly_data, limitless_data)
         
         # Check for expired opportunities after the scan
-        # This function correctly uses the 'comparison' dict to determine if the opportunity still exists
         self.check_expired(comparison)
 
     # ----------------------------------------------------------------------
@@ -199,6 +205,8 @@ class ArbitrageBot:
             'duration': None
         }
         
+        # We use slug as the key for active_opps because we only track ONE active opp 
+        # (internal or cross-platform) per market slug at a time.
         self.active_opps[slug] = opp 
         logger.info(f"🚨 ARB FOUND! {slug} | Type: {arb_type} | Profit: {profit:.4f}%")
         
@@ -207,7 +215,6 @@ class ArbitrageBot:
     def check_expired(self, current_comparison):
         """
         Checks if active opportunities still exist in the latest comparison data.
-        (Logic omitted for brevity, assume unchanged from your input)
         """
         # Create a set of all market slugs present in the current comparison data
         current_markets = set(current_comparison.keys())
