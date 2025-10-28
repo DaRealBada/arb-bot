@@ -2,20 +2,20 @@ import asyncio
 import os
 import logging
 import sys
-# Import the new dynamic classes/functions
 from polymarket import PolymarketClient
 from data.order_book import OrderBookManager 
-from polymarket.polymarket_client import PolymarketClient
+from polymarket.polymarket_client import PolymarketClient 
 from arbitrage.arbitrage_bot import ArbitrageBot 
-from gamma_fetch import get_market_mapping_for_bot # gamma_fetch is still in root
+from gamma_fetch import get_market_mapping_for_bot 
+from limitless_fetch import fetch_limitless_market_mapping
+from limitless import LimitlessClient
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # --- Configuration for Dynamic Market Fetching ---
-# Set the event slug you want to track
-EVENT_SLUG = "us-recession-in-2025" 
+# REMOVED: EVENT_SLUG (no longer needed since we scan all markets)
 # Set a minimum liquidity threshold (in USD) to filter out inactive markets
 MIN_LIQUIDITY = 1000 
 
@@ -24,11 +24,12 @@ async def run_arbitrage_bot():
     Orchestrates the dynamic market fetching, client connection, and arbitrage loop.
     """
     # 1. Fetch dynamic market mapping and tokens using gamma_fetch
-    logger.info(f"Step 1: Fetching market mapping for event '{EVENT_SLUG}'...")
-    market_mapping = get_market_mapping_for_bot(EVENT_SLUG, min_liquidity=MIN_LIQUIDITY)
-
+    logger.info(f"Step 1: Fetching market mapping for ALL active markets...")
+    market_mapping = get_market_mapping_for_bot(market_ids=None, min_liquidity=MIN_LIQUIDITY)
+    
     if not market_mapping:
-        logger.error(f"Failed to find any active binary markets with >${MIN_LIQUIDITY} liquidity for {EVENT_SLUG}. Exiting.")
+        # FIXED: Removed the reference to EVENT_SLUG since we are scanning all markets
+        logger.error(f"Failed to find any active binary markets with >${MIN_LIQUIDITY} liquidity on Polymarket. Exiting.")
         sys.exit(1)
 
     market_count = len(market_mapping)
@@ -36,7 +37,6 @@ async def run_arbitrage_bot():
     logger.info(f"✅ Found {market_count} markets (total {token_count} tokens) to monitor.")
 
     # 2. Initialize Polymarket Client with the fetched tokens
-    # PolymarketClient will extract the {yes_token_id, no_token_id} from the mapping
     polymarket_client = PolymarketClient(token_ids=market_mapping)
     polymarket_client.run()
 
@@ -45,8 +45,24 @@ async def run_arbitrage_bot():
         logger.error("🚨 Failed to receive initial Polymarket data from WebSocket, check your .env credentials or network.")
         return
     
-    # 3. Initialize OrderBookManager with the fetched mapping
-    order_book_manager = OrderBookManager(None, polymarket_client, market_mapping)
+   # 2.5 Dynamic Limitless Mapping
+    logger.info("Step 2.5: Fetching dynamic Limitless market mapping...")
+    limitless_mapping = fetch_limitless_market_mapping()
+    logger.info(f"✅ Found {len(limitless_mapping)} markets on Limitless to compare.")
+
+    # 2.6 Instantiate the Limitless Client
+    # FIXED: Initialize the LimitlessClient with the dynamic mapping. 
+    # This client will then handle fetching (or stubbing) the price data.
+    limitless_client = LimitlessClient(market_mapping=limitless_mapping) # <--- NEW LINE
+
+    # 3. Initialize OrderBookManager
+    # FIXED: Pass the instantiated client instead of None
+    order_book_manager = OrderBookManager(
+        polymarket_client, 
+        limitless_client, # <--- CHANGED FROM None
+        market_mapping, 
+        limitless_mapping
+    )
     arb_bot = ArbitrageBot(order_book_manager)
 
     await asyncio.sleep(1) # Wait briefly for stable connection

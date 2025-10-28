@@ -57,66 +57,85 @@ class PolymarketClient:
         ping_thread.start()
 
     def _on_message(self, ws, message):
-        try:
-            # Handle PONG responses
-            if message == "PONG":
-                return
-            
-            data = json.loads(message)
-            event_type = data.get("event_type")
-            
-            if event_type == "book":
-                # Full book update
-                asset_id = str(data["asset_id"])
+            try:
+                # Handle PONG responses
+                if message == "PONG":
+                    return
                 
-                # Note: docs say "buys" and "sells" but also show "bids" and "asks"
-                # Handle both formats
-                bids_raw = data.get("bids", data.get("buys", []))
-                asks_raw = data.get("asks", data.get("sells", []))
+                data = json.loads(message)
                 
-                bids = [(float(b["price"]), float(b["size"])) for b in bids_raw]
-                asks = [(float(a["price"]), float(a["size"])) for a in asks_raw]
+                # --- START FIX: Handle list messages ---
+                # If the message is a list, process each item in the list
+                if isinstance(data, list):
+                    for item in data:
+                        self._process_single_update(item)
+                # If the message is a dictionary, process it directly
+                elif isinstance(data, dict):
+                    self._process_single_update(data)
+                # --- END FIX ---
                 
-                with self.order_books_lock:
-                    self.order_books[asset_id] = {"bids": bids, "asks": asks}
-                    self.update_count += 1
-                
-                logger.info(f"Book update #{self.update_count} for {asset_id[:20]}...: {len(bids)}b {len(asks)}a")
-            
-            elif event_type == "price_change":
-                # Incremental update
-                for change in data.get("price_changes", []):
-                    asset_id = str(change["asset_id"])
-                    
-                    # Update best bid/ask if available
-                    if "best_bid" in change and "best_ask" in change:
-                        with self.order_books_lock:
-                            if asset_id not in self.order_books:
-                                self.order_books[asset_id] = {"bids": [], "asks": []}
-                            
-                            # Simple update - replace with best bid/ask
-                            # (For full book reconstruction you'd need more logic)
-                            best_bid = float(change["best_bid"]) if change["best_bid"] != "0" else 0
-                            best_ask = float(change["best_ask"]) if change["best_ask"] != "0" else 0
-                            
-                            if best_bid > 0:
-                                self.order_books[asset_id]["bids"] = [(best_bid, 1.0)]
-                            if best_ask > 0:
-                                self.order_books[asset_id]["asks"] = [(best_ask, 1.0)]
-                
-                logger.debug(f"Price change for {len(data.get('price_changes', []))} assets")
-            
-            elif event_type == "last_trade_price":
-                # Just log trade events
-                logger.debug(f"Trade: {data.get('asset_id', 'unknown')[:20]}... @ {data.get('price')}")
-            
-            else:
-                logger.debug(f"Unknown event type: {event_type}")
-        
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
-            logger.debug(f"Message was: {message[:200]}...")
+            except Exception as e:
+                logger.error(f"Error processing message: {e}")
+                # The error usually happens *before* the logger.debug when the message parsing fails
+                # We move the debug log inside the try/except for more context on the message itself
+                try:
+                    logger.debug(f"Failed message was: {message[:200]}...")
+                except:
+                    logger.debug("Failed message was too short or non-string.")
 
+
+    def _process_single_update(self, data):
+        """Helper function to process a single dictionary update message."""
+        event_type = data.get("event_type")
+        
+        if event_type == "book":
+            # Full book update
+            asset_id = str(data["asset_id"])
+            
+            # Note: docs say "buys" and "sells" but also show "bids" and "asks"
+            # Handle both formats
+            bids_raw = data.get("bids", data.get("buys", []))
+            asks_raw = data.get("asks", data.get("sells", []))
+            
+            bids = [(float(b["price"]), float(b["size"])) for b in bids_raw]
+            asks = [(float(a["price"]), float(a["size"])) for a in asks_raw]
+            
+            with self.order_books_lock:
+                self.order_books[asset_id] = {"bids": bids, "asks": asks}
+                self.update_count += 1
+            
+            logger.info(f"Book update #{self.update_count} for {asset_id[:20]}...: {len(bids)}b {len(asks)}a")
+        
+        elif event_type == "price_change":
+            # Incremental update
+            # Polymarket sometimes wraps price_changes in an event_type block, sometimes not.
+            # Your current code seems to assume the price changes are contained in 'data'.
+            # If the list message contained a 'price_change' event, this is the correct logic.
+            for change in data.get("price_changes", []):
+                asset_id = str(change["asset_id"])
+                
+                # Update best bid/ask if available
+                if "best_bid" in change and "best_ask" in change:
+                    with self.order_books_lock:
+                        if asset_id not in self.order_books:
+                            # If we don't have the book, create a stub to hold the best price
+                            self.order_books[asset_id] = {"bids": [], "asks": []}
+                        
+                        best_bid = float(change["best_bid"]) if change["best_bid"] != "0" else 0
+                        best_ask = float(change["best_ask"]) if change["best_ask"] != "0" else 0
+                        
+                        # Only keep the best price for Level 1 functionality
+                        self.order_books[asset_id]["bids"] = [(best_bid, 1.0)] if best_bid > 0 else []
+                        self.order_books[asset_id]["asks"] = [(best_ask, 1.0)] if best_ask > 0 else []
+            
+            logger.debug(f"Price change for {len(data.get('price_changes', []))} assets")
+        
+        elif event_type == "last_trade_price":
+            # Just log trade events
+            logger.debug(f"Trade: {data.get('asset_id', 'unknown')[:20]}... @ {data.get('price')}")
+        
+        else:
+            logger.debug(f"Unknown event type: {event_type}")
     def _on_error(self, ws, error):
         logger.error(f"WebSocket error: {error}")
         self.is_running = False
@@ -177,3 +196,41 @@ class PolymarketClient:
         
         logger.error(f"Timeout: received {received}/{len(self.token_ids)} orderbooks")
         return received > 0  # Return True if we got at least some data
+    def place_order(self, token_id: str, outcome: str, amount: float, price: float):
+        """
+        Simulates placing a market order on Polymarket.
+        
+        :param token_id: The ID of the token to trade (e.g., YES token ID).
+        :param outcome: The outcome side ('yes' or 'no') to trade.
+        :param amount: The amount of shares to buy/sell (e.g., 100.0).
+        :param price: The price at which to place the limit order (e.g., 0.50).
+        :return: Boolean success status.
+        """
+        
+        # --- EXECUTION STUB START ---
+        
+        # In a real scenario, this is where you would call the
+        # actual Polymarket SDK/API to submit a signed transaction.
+        
+        if token_id in self.market_mapping:
+            market_slug = next(slug for slug, data in self.market_mapping.items() if data.get('yes_token_id') == token_id or data.get('no_token_id') == token_id)
+        else:
+            market_slug = "Unknown Market"
+            
+        if price > 1.0 or price < 0.0:
+            logger.error(f"Execution Error: Invalid price {price} for {market_slug}")
+            return False
+
+        logger.warning(f"*** POLYMARKET EXECUTION STUB ***")
+        logger.warning(f"SUBMITTING ORDER: Buy/Sell {outcome.upper()} shares")
+        logger.warning(f"  Market: {market_slug}")
+        logger.warning(f"  Amount: {amount:.4f} shares")
+        logger.warning(f"  Price:  ${price:.4f}")
+        logger.warning(f"  Token:  {token_id}")
+        logger.warning(f"*** ORDER SIMULATED SUCCESSFULLY ***")
+
+        # In a real bot, we would wait for transaction confirmation here.
+        # Returning True simulates successful order placement.
+        return True
+        
+        # --- EXECUTION STUB END ---

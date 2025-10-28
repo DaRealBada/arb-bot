@@ -150,21 +150,69 @@ def fetch_event_markets(event_slug, min_liquidity=0, only_active=True):
     return detailed_markets
 
 
-def get_market_mapping_for_bot(event_slug, min_liquidity=0):
+def get_market_mapping_for_bot(market_ids=None, min_liquidity=0):
     """
     Fetches markets and formats them for the bot's POLYMARKET_MAPPING structure.
     Only includes binary (Yes/No) markets.
     
+    Args:
+        market_ids: A list of market IDs to scan. If None or empty, all active Polymarket IDs are fetched.
+        min_liquidity: Minimum liquidity filter.
+        
     Returns:
-        Dictionary in the format:
-        {
-            "market_slug": {
-                "question": "Market question?",
-                "yes_token_id": "...",
-                "no_token_id": "..."
-            }
-        }
+        The bot-ready market mapping dictionary.
     """
+    # 1. Determine which markets to scan
+    if not market_ids:
+        market_ids = fetch_all_active_market_ids()
+    
+    if not market_ids:
+        logger.error("No market IDs to process.")
+        return {}
+        
+    # 2. Fetch detailed data for each market
+    mapping = {}
+    
+    for market_id in market_ids:
+        market_details = fetch_market_details(market_id)
+        
+        if not market_details or not market_details.get('clobTokenIds'):
+            continue
+            
+        # Apply filters
+        if min_liquidity > 0 and market_details.get('liquidity', 0) < min_liquidity:
+            continue
+            
+        # Only process binary markets (2 outcomes)
+        if len(market_details.get('outcomes', [])) != 2 or len(market_details.get('clobTokenIds', [])) != 2:
+            continue
+            
+        outcomes = market_details['outcomes']
+        token_ids = market_details['clobTokenIds']
+        
+        # Determine which token is YES and which is NO (same logic as before)
+        yes_idx = 0
+        no_idx = 1
+        for i, outcome in enumerate(outcomes):
+            outcome_lower = str(outcome).lower()
+            if outcome_lower == 'yes':
+                yes_idx = i
+                no_idx = 1 - i
+            elif outcome_lower == 'no':
+                no_idx = i
+                yes_idx = 1 - i
+        
+        mapping[market_details['slug']] = {
+            "question": market_details['question'],
+            "yes_token_id": token_ids[yes_idx],
+            "no_token_id": token_ids[no_idx],
+            "liquidity": market_details.get('liquidity', 0),
+            "volume24hr": market_details.get('volume24hr', 0)
+        }
+
+    logger.info(f"Successfully processed {len(mapping)} binary markets matching criteria.")
+    return mapping    
+
     markets = fetch_event_markets(event_slug, min_liquidity=min_liquidity)
     mapping = {}
     
@@ -199,6 +247,48 @@ def get_market_mapping_for_bot(event_slug, min_liquidity=0):
         }
     
     return mapping
+def fetch_all_active_market_ids():
+    """
+    Fetches the IDs of all active, non-closed markets on Polymarket.
+    This is necessary because the /markets endpoint typically requires filters.
+    """
+    all_market_ids = set()
+    page = 1
+    page_size = 50 # Standard limit for many APIs
+
+    logger.info("Fetching list of all active market IDs...")
+    
+    # Loop until no more markets are returned
+    while True:
+        try:
+            # We use a broad search to retrieve all active markets
+            markets_url = f"{GAMMA_BASE_URL}/markets?closed=false&page={page}&per_page={page_size}"
+            response = requests.get(markets_url, timeout=10)
+            response.raise_for_status()
+            
+            markets_data = response.json()
+            # The API response structure might contain a 'markets' key or be a list itself
+            markets_list = markets_data if isinstance(markets_data, list) else markets_data.get('markets', [])
+
+            if not markets_list:
+                break # Exit the loop if no markets were returned
+
+            for market in markets_list:
+                if market.get('active', False) and not market.get('closed', True):
+                    all_market_ids.add(market['id'])
+            
+            # Check if we've reached the end of the results
+            if len(markets_list) < page_size:
+                break
+                
+            page += 1
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching active market IDs on page {page}: {e}")
+            break
+            
+    logger.info(f"Found {len(all_market_ids)} total active market IDs.")
+    return list(all_market_ids)
 
 
 # --- For standalone script usage ---
