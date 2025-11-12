@@ -79,7 +79,7 @@ async def run_arbitrage_bot():
             arb_bot.print_opportunities()
             
             # Print a summary of ALL tracked markets
-            arb_bot.print_market_summary()
+            # arb_bot.print_market_summary()
 
             await asyncio.sleep(0.5) 
 

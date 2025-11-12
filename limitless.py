@@ -10,7 +10,6 @@ ORDER_BOOK_ENDPOINT = "/public/order_book"
 class LimitlessClient:
     """
     A client to fetch public order book data from Limitless (Limitlex) via REST API.
-    Since Limitless is an exchange, we are fetching order books based on pair_ids.
     """
     def __init__(self, market_mapping=None):
         """
@@ -20,6 +19,22 @@ class LimitlessClient:
         self.market_mapping = market_mapping if market_mapping is not None else {}
         self.order_books = {} # Storage: { slug: { 'yes': {'bids': [], 'asks': []}, 'no': {...} } }
         logger.info(f"LimitlessClient initialized with {len(self.market_mapping)} market IDs.")
+        
+    def _safe_float(self, value):
+        """Helper function to safely convert a price or volume string to float."""
+        try:
+            # Strip whitespace and check if it's not None or an empty string before conversion
+            if value is not None and str(value).strip():
+                return float(value)
+            return 0.0
+        except ValueError:
+            # Catches errors when the string is non-numeric (e.g., 'abc')
+            logger.debug(f"Non-numeric value encountered: {value}")
+            return 0.0
+
+
+# File: limitless.py
+# ... (rest of the file remains the same until fetch_orderbook) ...
 
     def fetch_orderbook(self, pair_id):
         """
@@ -41,26 +56,51 @@ class LimitlessClient:
                 logger.error(f"Limitless API error for {pair_id}: {data['error'].get('message', 'Unknown error')}")
                 return None
             
+            # Defensive check for the top-level 'result' key
             result = data.get('result', {})
             
-            # Convert raw exchange data (price/size strings) to standardized format (float, float)
-            bids = [(float(b['price']), float(b.get('size', b.get('amount_1', 0)))) 
-                    for b in result.get('bids', [])]
-            asks = [(float(a['price']), float(a.get('size', a.get('amount_1', 0)))) 
-                    for a in result.get('asks', [])]
+            # --- CRITICAL FIX: Isolate list comprehensions with try/except ---
+            try:
+                # Sanity check: Ensure 'bids' and 'asks' are lists if they exist
+                bids_data = result.get('bids')
+                if bids_data is None or not isinstance(bids_data, list):
+                    bids_data = []
+
+                asks_data = result.get('asks')
+                if asks_data is None or not isinstance(asks_data, list):
+                    asks_data = []
+
+                # FINAL, ROBUST FIX: Use the sanitized data structures.
+                bids = [(self._safe_float(b['price']), self._safe_float(b.get('size', b.get('amount_1', 0)))) 
+                        for b in bids_data
+                        if isinstance(b, dict) and 'price' in b]
+                
+                asks = [(self._safe_float(a['price']), self._safe_float(a.get('size', a.get('amount_1', 0)))) 
+                        for a in asks_data
+                        if isinstance(a, dict) and 'price' in a]
             
+            except Exception as e:
+                 # Catch any remaining iteration or key error explicitly here.
+                logger.error(f"Error during list comprehension for {pair_id}: {e}")
+                return None
+            # ------------------------------------------------------------------
+
             return {'bids': bids, 'asks': asks}
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch Limitless order book for {pair_id}: {e}")
             return None
         except (ValueError, KeyError, TypeError) as e:
-            logger.error(f"Error processing Limitless response for {pair_id}: {e}")
+            # This block should now only catch errors in the initial response.json() or data access.
+            logger.error(f"Error processing initial Limitless response for {pair_id}: {e}")
             return None
+            
+# ... (rest of the file remains the same) ...
 
     def fetch_all_order_books(self):
         """
-        Fetches and updates real order books for all tracked pairs.
+        Fetches and updates real order books for all tracked pairs by utilizing
+        the robust fetch_orderbook helper method.
         
         Returns:
             dict: { slug: { 'yes': {'bids': [...], 'asks': [...]}, 'no': {...} } }
@@ -77,56 +117,22 @@ class LimitlessClient:
                 continue
                 
             pair_id = data['pair_id']
-            url = f"{LIMITLEX_BASE_URL}{ORDER_BOOK_ENDPOINT}?pair_id={pair_id}"
             
-            try:
-                response = requests.get(url, timeout=5) 
-                response.raise_for_status() 
-                book_data = response.json()
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"Failed to fetch order book for {internal_slug} ({pair_id}): {e}")
-                continue
-            except Exception as e:
-                logger.error(f"Unexpected error fetching {internal_slug}: {e}")
-                continue
-            
-            if not book_data.get('result'):
-                logger.warning(f"No result in response for {internal_slug}")
-                continue
-                
-            result = book_data['result']
-            if 'asks' not in result or 'bids' not in result:
-                logger.warning(f"Missing asks/bids in result for {internal_slug}")
-                continue
-            
-            try:
-                # Format order book data
-                asks_list = []
-                for item in result['asks']:
-                    price = float(item['price'])
-                    volume = float(item.get('amount_1', item.get('size', 0)))
-                    asks_list.append((price, volume))
+            # Call the robust single-market fetcher
+            book_data = self.fetch_orderbook(pair_id)
 
-                bids_list = []
-                for item in result['bids']:
-                    price = float(item['price'])
-                    volume = float(item.get('amount_1', item.get('size', 0)))
-                    bids_list.append((price, volume))
-
-                # Map base asset to 'yes' side for compatibility
+            if book_data:
+                # Map and store the successfully parsed book
                 new_books[internal_slug] = {
                     "yes": {
-                        "bids": bids_list,
-                        "asks": asks_list
+                        "bids": book_data.get('bids', []),
+                        "asks": book_data.get('asks', [])
                     },
                     "no": {
-                        "bids": [],  # Not used for exchange pairs
+                        "bids": [], 
                         "asks": []
                     }
                 }
-            except (ValueError, KeyError, TypeError) as e:
-                logger.error(f"Error parsing order book for {internal_slug}: {e}")
-                continue
 
         logger.info(f"Limitless: Updated {len(new_books)}/{len(self.market_mapping)} order books from API.")
         self.order_books = new_books
